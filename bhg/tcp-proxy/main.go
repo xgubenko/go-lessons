@@ -1,49 +1,42 @@
 package main
 
 import (
-	"fmt"
 	"io"
 	"log"
-	"os"
+	"net/http"
 )
 
-type FooReader struct{}
-type FooWriter struct{}
-
-func (fooReader *FooReader) Read(b []byte) (int, error) {
-	fmt.Print("in > ")
-	return os.Stdin.Read(b)
-}
-
-func (FooWriter *FooWriter) Write(b []byte) (int, error) {
-	fmt.Print("out > ")
-	return os.Stdout.Write(b)
-}
-
 func main() {
-	var (
-		reader FooReader
-		writer FooWriter
-	)
+	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		// Создаем новый запрос к google.com
+		req, err := http.NewRequest(r.Method, "https://www.google.com"+r.URL.Path, r.Body)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadGateway)
+			return
+		}
 
-	if _, err := io.Copy(&writer, &reader); err != nil {
-		log.Fatalln("Unable to copy data")
-	}
+		// Копируем заголовки клиента
+		req.Header = r.Header.Clone()
 
-	// input := make([]byte, 4096)
+		// Создаем HTTP-клиент
+		client := &http.Client{}
+		resp, err := client.Do(req)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadGateway)
+			return
+		}
+		defer resp.Body.Close()
 
-	// s, err := reader.Read(input)
+		// Копируем заголовки и тело обратно клиенту
+		for k, v := range resp.Header {
+			for _, vv := range v {
+				w.Header().Add(k, vv)
+			}
+		}
+		w.WriteHeader(resp.StatusCode)
+		io.Copy(w, resp.Body)
+	})
 
-	// if err != nil {
-	// 	log.Fatalln("Unable to read data")
-	// }
-	// fmt.Printf("Read %d bytes from stdin\n", s)
-
-	// s, err = writer.Write(input)
-
-	// if err != nil {
-	// 	log.Fatalln("Unable to write data")
-	// }
-
-	// fmt.Printf("Wrote %d bytes to stdout\n", s)
+	log.Println("Localhost redirector proxy running on :8080")
+	log.Fatal(http.ListenAndServe(":8080", nil))
 }
